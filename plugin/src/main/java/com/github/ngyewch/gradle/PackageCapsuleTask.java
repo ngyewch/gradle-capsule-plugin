@@ -6,7 +6,7 @@ import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ResolvedArtifact;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.model.ObjectFactory;
-import org.gradle.api.plugins.BasePluginConvention;
+import org.gradle.api.plugins.BasePluginExtension;
 import org.gradle.api.plugins.JavaApplication;
 import org.gradle.api.provider.MapProperty;
 import org.gradle.api.provider.Property;
@@ -18,10 +18,9 @@ import org.gradle.api.tasks.bundling.Jar;
 
 import javax.inject.Inject;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.*;
-import java.util.concurrent.Callable;
 import java.util.jar.Attributes;
 import java.util.jar.Manifest;
 import java.util.stream.Collectors;
@@ -90,16 +89,16 @@ public abstract class PackageCapsuleTask
   private class TaskHandler {
 
     private final Project project;
-    private final BasePluginConvention basePluginConvention;
+    private final BasePluginExtension basePluginExtension;
     private final CapsuleExtension capsuleExtension;
 
     public TaskHandler() {
       super();
 
       project = getProject();
-      basePluginConvention = project.getConvention().findPlugin(BasePluginConvention.class);
-      if (basePluginConvention == null) {
-        throw new GradleException("base plugin convention not found");
+      basePluginExtension = project.getExtensions().findByType(BasePluginExtension.class);
+      if (basePluginExtension == null) {
+        throw new GradleException("base plugin extension not found");
       }
       capsuleExtension = getProject().getExtensions().findByType(CapsuleExtension.class);
       if (capsuleExtension == null) {
@@ -118,7 +117,7 @@ public abstract class PackageCapsuleTask
       final Set<ResolvedArtifact> runtimeResolvedArtifacts = embedConfiguration
           .getResolvedConfiguration().getResolvedArtifacts();
 
-      final File libsDir = basePluginConvention.getLibsDirectory().getAsFile().get();
+      final File libsDir = basePluginExtension.getLibsDirectory().getAsFile().get();
       libsDir.mkdirs();
       final File outputFile = new File(libsDir, getArchiveFileName());
 
@@ -127,7 +126,7 @@ public abstract class PackageCapsuleTask
         manifest.getMainAttributes().putValue(entry.getKey(), entry.getValue());
       }
 
-      try (final CapsulePackager capsulePackager = new CapsulePackager(new FileOutputStream(outputFile), manifest)) {
+      try (final CapsulePackager capsulePackager = new CapsulePackager(Files.newOutputStream(outputFile.toPath()), manifest)) {
         for (final ResolvedArtifact resolvedArtifact : capsuleResolvedArtifacts) {
           getLogger().info("adding boot classes: {}", resolvedArtifact.getModuleVersion());
           capsulePackager.addBootJar(resolvedArtifact.getFile());
@@ -163,17 +162,15 @@ public abstract class PackageCapsuleTask
 
     private String getArchiveFileName() {
       final Property<String> projectVersionProperty = project.getObjects().property(String.class);
-      if (project.getVersion() != null) {
-        final String projectVersion = project.getVersion().toString();
-        if (!projectVersion.equals("unspecified")) {
-          projectVersionProperty.set(projectVersion);
-        }
+      final String projectVersion = project.getVersion().toString();
+      if (!projectVersion.equals("unspecified")) {
+        projectVersionProperty.set(projectVersion);
       }
 
       final List<Provider<String>> archiveNamePartProviders = new ArrayList<>();
       archiveNamePartProviders.add(getArchiveBaseName()
           .orElse(capsuleExtension.getArchiveBaseName())
-          .orElse(basePluginConvention.getArchivesBaseName()));
+          .orElse(basePluginExtension.getArchivesName()));
       archiveNamePartProviders.add(getArchiveAppendix()
           .orElse(capsuleExtension.getArchiveAppendix()));
       archiveNamePartProviders.add(getArchiveVersion()
@@ -186,7 +183,7 @@ public abstract class PackageCapsuleTask
       final List<String> archiveNameParts = archiveNamePartProviders.stream()
           .filter(Provider::isPresent)
           .map(Provider::get)
-          .filter(part -> !part.isBlank())
+          .filter(part -> !StringUtils.isBlank(part))
           .collect(Collectors.toList());
 
       final String extension = getArchiveExtension()
@@ -305,10 +302,7 @@ public abstract class PackageCapsuleTask
       public Provider<String> getApplicationVersion() {
         return taskCapsuleManifest.getApplicationVersion()
             .orElse(extensionCapsuleManifest.getApplicationVersion())
-            .orElse(project.getProviders().provider((Callable<String>) () -> {
-              if (project.getVersion() == null) {
-                return null;
-              }
+            .orElse(project.getProviders().provider(() -> {
               final String version = project.getVersion().toString();
               if (version.equals("unspecified")) {
                 return null;
@@ -325,7 +319,7 @@ public abstract class PackageCapsuleTask
       public Provider<String> getApplicationClass() {
         return taskCapsuleManifest.getApplicationClass()
             .orElse(extensionCapsuleManifest.getApplicationClass())
-            .orElse(project.getProviders().provider((Callable<String>) () -> {
+            .orElse(project.getProviders().provider(() -> {
               final JavaApplication javaApplication = getProject().getExtensions().findByType(JavaApplication.class);
               if (javaApplication == null) {
                 throw new GradleException("mainClass not specified");
@@ -377,7 +371,7 @@ public abstract class PackageCapsuleTask
   private static class ListTransformer
       implements Transformer<List<String>, List<String>> {
 
-    private static ListTransformer INSTANCE = new ListTransformer();
+    private static final ListTransformer INSTANCE = new ListTransformer();
 
     @Override
     public List<String> transform(List<String> strings) {
@@ -391,7 +385,7 @@ public abstract class PackageCapsuleTask
   private static class MapTransformer
       implements Transformer<Map<String, String>, Map<String, String>> {
 
-    private static MapTransformer INSTANCE = new MapTransformer();
+    private static final MapTransformer INSTANCE = new MapTransformer();
 
     @Override
     public Map<String, String> transform(Map<String, String> stringMap) {

@@ -1,16 +1,16 @@
 package com.github.ngyewch.gradle;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
 import java.util.zip.CRC32;
 
 public class ZipUtils {
 
   public static long getCRC32(File file)
       throws IOException {
-    try (final InputStream inputStream = new FileInputStream(file)) {
+    try (final InputStream inputStream = Files.newInputStream(file.toPath())) {
       return getCRC32(inputStream);
     }
   }

@@ -4,6 +4,7 @@ import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.IOUtils;
 
 import java.io.*;
+import java.nio.file.Files;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.jar.JarEntry;
@@ -26,7 +27,7 @@ public class CapsulePackager
 
   public void addBootJar(File jarFile)
       throws IOException {
-    try (final JarInputStream jarInputStream = new JarInputStream(new FileInputStream(jarFile))) {
+    try (final JarInputStream jarInputStream = new JarInputStream(Files.newInputStream(jarFile.toPath()))) {
       while (true) {
         final JarEntry jarEntry = jarInputStream.getNextJarEntry();
         if (jarEntry == null) {
@@ -76,7 +77,7 @@ public class CapsulePackager
       final String extension = FilenameUtils.getExtension(entryName);
       int i = 1;
       while (true) {
-        entryName = baseName + "-" + i + (extension.equals("") ? "" : "." + extension);
+        entryName = baseName + "-" + i + (extension.isEmpty() ? "" : "." + extension);
         if (!filenameSet.contains(entryName)) {
           break;
         }
@@ -91,7 +92,7 @@ public class CapsulePackager
     jarEntry.setSize(jarFile.length());
     jarEntry.setCrc(ZipUtils.getCRC32(jarFile));
     jarOutputStream.putNextEntry(jarEntry);
-    try (final InputStream inputStream = new FileInputStream(jarFile)) {
+    try (final InputStream inputStream = Files.newInputStream(jarFile.toPath())) {
       IOUtils.copy(inputStream, jarOutputStream);
     }
     jarOutputStream.closeEntry();
